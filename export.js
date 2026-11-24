@@ -2,7 +2,7 @@
 // H.264 (High) + AAC-LC stereo, constant frame rate, yuv420p 8-bit SDR, rotation baked in,
 // keyframe every 2 s, metadata at the front (fast start) so YouTube/TikTok/IG can process it while uploading.
 import {
-  Output, Mp4OutputFormat, StreamTarget, VideoSampleSink, AudioSampleSink,
+  Output, Mp4OutputFormat, StreamTarget, VideoSampleSink,
   VideoSampleSource, AudioSampleSource, AudioSample, Quality, canEncodeVideo, canEncodeAudio,
 } from 'mediabunny';
 
@@ -179,10 +179,8 @@ export async function exportVideo({ info, keeps, options, signal, onProgress }) 
   };
 
   const audioJob = async () => {
-    const sink = new AudioSampleSink(info.at);
     const fadeN = Math.round((options.fade || 0) * sr);
     let outFrames = 0, outStart = 0;
-    let plane = new Float32Array(0);
     const push = async (L, R) => {
       const data = new Float32Array(L.length * 2);
       data.set(L, 0); data.set(R, L.length);
@@ -192,21 +190,15 @@ export async function exportVideo({ info, keeps, options, signal, onProgress }) 
     };
     for (const [s, e] of keeps) {
       const fs = Math.round(s * info.sampleRate), fe = Math.round(e * info.sampleRate);
-      for await (const sample of sink.samples(s, e)) {
-        if (signal.aborted) { sample.close(); break; }
-        const srcSr = sample.sampleRate, n = sample.numberOfFrames, ch = sample.numberOfChannels;
-        const a0 = Math.round(sample.timestamp * srcSr);
+      for await (const chunk of info.audio.chunks(s, e)) {
+        if (signal.aborted) break;
+        const srcSr = chunk.sampleRate, n = chunk.planes[0].length;
+        const a0 = Math.round(chunk.timestamp * srcSr);
         const from = Math.max(a0, fs), to = Math.min(a0 + n, fe);
-        if (to <= from) { sample.close(); continue; }
+        if (to <= from) continue;
         const count = to - from, off = from - a0;
-        const chans = [];
-        for (let c = 0; c < Math.min(2, ch); c++) {
-          if (plane.length < count) plane = new Float32Array(count);
-          sample.copyTo(plane, { planeIndex: c, format: 'f32-planar', frameOffset: off, frameCount: count });
-          chans.push(plane.slice(0, count));
-        }
-        sample.close();
-        let [L, R] = chans; if (!R) R = L.slice();
+        const L = chunk.planes[0].slice(off, off + count);
+        const R = (chunk.planes[1] || chunk.planes[0]).slice(off, off + count);
         // short fades at every cut edge so joins don't click
         if (fadeN > 0) for (let i = 0; i < count; i++) {
           const p = from + i, g = Math.min(1, (p - fs) / fadeN, (fe - p) / fadeN);

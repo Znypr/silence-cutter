@@ -12,7 +12,7 @@ Phone web app (PWA): pick a video, it finds the dead silences, you tweak and pre
 - **Export**: H.264 High + AAC-LC stereo 192k, constant frame rate (variable-frame-rate phone video is conformed), 8-bit SDR (HDR converted), rotation baked in, keyframe every 2 s, fast-start MP4. Bitrate at YouTube's recommended upload spec (4K30 45 Mbps, 4K60 68, 1080p30 12...). 5-10 ms audio fades at each join. Then Share (straight to TikTok/YouTube/gallery) or Download.
 
 ## Tech
-- [Mediabunny](https://mediabunny.dev) (MPL-2.0, vendored in `vendor/`) over WebCodecs: hardware decode/encode, streams the file instead of loading it, so 4K and long clips work. AAC wasm fallback for browsers without a native AAC encoder.
+- [Mediabunny](https://mediabunny.dev) (MPL-2.0, vendored in `vendor/`) over WebCodecs: hardware decode/encode, streams the file instead of loading it, so 4K and long clips work. AAC wasm fallback for browsers without a native AAC encoder. AAC *decode* fallback (`audio-source.js`): when WebCodecs can't decode the audio (common on phones), packets are wrapped as ADTS and decoded in 30 s chunks with Web Audio `decodeAudioData`; verified bit-identical to the native path. Test it on desktop with `?aacfallback`.
 - Needs a secure page (https or localhost) and Chrome (Android) / Safari 16.4+ (iPhone).
 - Files: `index.html`, `style.css`, `app.js` (detection, timeline, preview), `export.js` (encode), `sw.js` (offline), `manifest.webmanifest`, icons (`make_icons.py`).
 

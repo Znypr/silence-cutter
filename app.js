@@ -1,6 +1,7 @@
 // Silence Cutter: pick a video, detect dead air, tweak, preview, export.
-import { Input, ALL_FORMATS, BlobSource, AudioSampleSink } from 'mediabunny';
+import { Input, ALL_FORMATS, BlobSource } from 'mediabunny';
 import { exportVideo, describeExport, checkSupport } from './export.js';
+import { makeAudioReader } from './audio-source.js';
 
 const $ = (id) => document.getElementById(id);
 const HOP = 0.01; // envelope resolution: 10 ms
@@ -142,11 +143,11 @@ async function loadFile(file) {
     const at = await input.getPrimaryAudioTrack();
     if (!vt) throw new Error('No video track found in this file.');
     if (!at) throw new Error('This video has no sound, so there is no silence to find.');
-    if (!(await at.canDecode())) throw new Error(`This phone can't decode the audio (${await at.getCodec()}).`);
+    const audio = await makeAudioReader(at);
     const duration = await input.computeDuration();
     const fr = await vt.computeFrameRateMetrics().catch(() => null);
     S.info = {
-      vt, at, duration,
+      vt, at, audio, duration,
       width: await vt.getDisplayWidth(), height: await vt.getDisplayHeight(),
       codedWidth: await vt.getCodedWidth?.(), rotation: await vt.getRotation(),
       fps: fr?.bestGuessFrameRate || 30, fpsMin: fr?.minFrameRate, fpsMax: fr?.maxFrameRate,
@@ -157,7 +158,7 @@ async function loadFile(file) {
     };
     S.duration = duration;
     $('video').src = URL.createObjectURL(file);
-    await analyse(at, duration);
+    await analyse(audio, await at.getSampleRate(), duration);
     S.params.thr = autoThreshold();
     syncControls();
     show('analysing', false); show('editor', true);
@@ -171,24 +172,19 @@ async function loadFile(file) {
   }
 }
 
-async function analyse(at, duration) {
+async function analyse(audio, sr, duration) {
   $('analyseLabel').textContent = 'Listening for silence…';
-  const sr = await at.getSampleRate();
   const hopN = Math.max(1, Math.round(sr * HOP));
   const total = Math.ceil(duration / HOP) + 2;
   const db = new Float32Array(total).fill(-120);
-  const sink = new AudioSampleSink(at);
   let acc = 0, accN = 0, idx = -1, lastUi = 0;
-  let plane = new Float32Array(0), mono = new Float32Array(0);
-  for await (const sample of sink.samples()) {
-    const n = sample.numberOfFrames, ch = sample.numberOfChannels;
-    if (mono.length < n) { mono = new Float32Array(n); plane = new Float32Array(n); }
+  let mono = new Float32Array(0);
+  for await (const chunk of audio.chunks(0, duration + 1)) {
+    const { planes } = chunk, n = planes[0].length, ch = planes.length;
+    if (mono.length < n) mono = new Float32Array(n);
     mono.fill(0, 0, n);
-    for (let c = 0; c < ch; c++) {
-      sample.copyTo(plane, { planeIndex: c, format: 'f32-planar' });
-      for (let i = 0; i < n; i++) mono[i] += plane[i] / ch;
-    }
-    let pos = Math.round(sample.timestamp * sr);
+    for (const plane of planes) for (let i = 0; i < n; i++) mono[i] += plane[i] / ch;
+    let pos = Math.round(chunk.timestamp * sr);
     for (let i = 0; i < n; i++, pos++) {
       const bin = Math.floor(pos / hopN);
       if (bin !== idx) {
@@ -197,7 +193,7 @@ async function analyse(at, duration) {
       }
       acc += mono[i] * mono[i]; accN++;
     }
-    const t = sample.timestamp; sample.close();
+    const t = chunk.timestamp;
     if (performance.now() - lastUi > 100) {
       lastUi = performance.now();
       $('analyseBar').style.width = `${Math.min(100, (t / duration) * 100)}%`;
