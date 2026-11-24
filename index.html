@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111214">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Silence Cutter</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{ "imports": { "mediabunny": "./vendor/mediabunny.min.mjs" } }
+</script>
+</head>
+<body>
+<header class="top">
+  <h1>Silence Cutter</h1>
+  <label class="btn ghost small" id="newBtn" hidden>New video<input type="file" accept="video/*" id="fileInput2" hidden></label>
+</header>
+
+<main>
+  <!-- 1. Pick -->
+  <section id="pick" class="card pick">
+    <p class="lead">Pick a video. It never leaves your phone.</p>
+    <label class="btn primary big">Choose video<input type="file" accept="video/*" id="fileInput" hidden></label>
+    <p class="hint" id="supportNote"></p>
+  </section>
+
+  <!-- 2. Analyse progress -->
+  <section id="analysing" class="card" hidden>
+    <p id="analyseLabel">Reading audio…</p>
+    <div class="bar"><div id="analyseBar"></div></div>
+  </section>
+
+  <!-- 3. Editor -->
+  <section id="editor" hidden>
+    <div class="player">
+      <video id="video" playsinline preload="metadata"></video>
+    </div>
+
+    <div class="transport">
+      <button class="btn round" id="playBtn" aria-label="Play">▶</button>
+      <div class="seg-toggle" role="group" aria-label="Preview mode">
+        <button id="modeCut" class="on">Trimmed</button>
+        <button id="modeOrig">Original</button>
+      </div>
+      <span class="time" id="timeLabel">0:00</span>
+    </div>
+
+    <div class="stats" id="stats"></div>
+
+    <div class="timeline-wrap">
+      <canvas id="timeline" height="120"></canvas>
+      <div class="zoom-row">
+        <span>Zoom</span><input type="range" id="zoom" min="1" max="40" step="1" value="1">
+      </div>
+    </div>
+
+    <div class="legend">
+      <span><i style="background:#7fd3ae"></i>speech</span>
+      <span><i style="background:#e0b45a"></i>kept pause (padding)</span>
+      <span><i style="background:#a2524f"></i>removed</span>
+      <span><i class="dash"></i>threshold</span>
+    </div>
+
+    <!-- Hear one cut -->
+    <div class="card cutprev" id="cutCard">
+      <div class="piece-head">
+        <strong>Hear a cut</strong>
+        <span id="cutIdx" class="mono"></span>
+      </div>
+      <canvas id="cutCanvas"></canvas>
+      <div class="piece-actions">
+        <button class="btn small" id="cutPrevBtn" aria-label="Previous cut">‹</button>
+        <button class="btn primary" id="cutPlayBtn">▶ Trimmed</button>
+        <button class="btn" id="cutOrigBtn">▶ Original</button>
+        <button class="btn small" id="cutNextBtn" aria-label="Next cut">›</button>
+      </div>
+      <p class="hint" id="cutInfo"></p>
+    </div>
+
+    <!-- Selected piece -->
+    <div class="card piece" id="piece" hidden>
+      <div class="piece-head">
+        <strong id="pieceTitle">Piece</strong>
+        <span id="pieceRange" class="mono"></span>
+      </div>
+      <div class="piece-actions">
+        <button class="btn" id="toggleBtn">Cut this</button>
+        <button class="btn ghost" id="playPieceBtn">Play around it</button>
+        <button class="btn ghost" id="undoBtn" disabled>Undo</button>
+      </div>
+      <div class="nudge">
+        <div>
+          <span class="nlabel">Start</span>
+          <button class="btn small" data-nudge="start,-0.1">−0.1s</button>
+          <button class="btn small" data-nudge="start,-1f">−1f</button>
+          <button class="btn small" data-nudge="start,1f">+1f</button>
+          <button class="btn small" data-nudge="start,0.1">+0.1s</button>
+        </div>
+        <div>
+          <span class="nlabel">End</span>
+          <button class="btn small" data-nudge="end,-0.1">−0.1s</button>
+          <button class="btn small" data-nudge="end,-1f">−1f</button>
+          <button class="btn small" data-nudge="end,1f">+1f</button>
+          <button class="btn small" data-nudge="end,0.1">+0.1s</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings -->
+    <div class="card settings">
+      <div class="set-head">
+        <h2>Trim settings</h2>
+        <div class="presets">
+          <button class="chip" data-preset="gentle">Gentle</button>
+          <button class="chip on" data-preset="normal">Normal</button>
+          <button class="chip" data-preset="tight">Tight</button>
+        </div>
+      </div>
+
+      <div class="ctl">
+        <label for="thr">Silence threshold <b id="thrV"></b></label>
+        <div class="row"><input type="range" id="thr" min="-70" max="-10" step="1"><button class="btn small ghost" id="autoThr">Auto</button></div>
+        <canvas id="thrCurve"></canvas>
+        <p class="hint" id="thrInfo">Quieter than this counts as silence. Curve = how much each threshold would remove; tap it to pick.</p>
+      </div>
+      <div class="ctl">
+        <label for="minSil">Shortest pause to cut <b id="minSilV"></b></label>
+        <input type="range" id="minSil" min="0.1" max="3" step="0.05">
+        <p class="hint">Pauses shorter than this stay (natural breathing).</p>
+      </div>
+      <div class="ctl">
+        <label for="keepPause">Leave in each pause <b id="keepPauseV"></b></label>
+        <input type="range" id="keepPause" min="0" max="1" step="0.02">
+        <p class="hint">Room kept before and after speech so words aren't clipped.</p>
+      </div>
+      <div class="ctl">
+        <label for="minClip">Delete leftover snippets under <b id="minClipV"></b></label>
+        <input type="range" id="minClip" min="0" max="2" step="0.05">
+        <p class="hint">Removes tiny blips (clicks, breaths) left between cuts. 0 = off.</p>
+      </div>
+      <button class="btn ghost small" id="resetManual" hidden>Undo my manual edits</button>
+    </div>
+
+    <!-- Export -->
+    <div class="card export">
+      <h2>Export</h2>
+      <div class="grid2">
+        <label>Resolution
+          <select id="outRes">
+            <option value="src">Same as video</option>
+            <option value="2160">4K (2160p)</option>
+            <option value="1440">1440p</option>
+            <option value="1080">1080p</option>
+            <option value="720">720p</option>
+          </select>
+        </label>
+        <label>Frame rate
+          <select id="outFps">
+            <option value="auto">Auto (match video)</option>
+            <option value="24">24</option>
+            <option value="25">25</option>
+            <option value="30">30</option>
+            <option value="50">50</option>
+            <option value="60">60</option>
+          </select>
+        </label>
+        <label>Quality
+          <select id="outQ">
+            <option value="high">High (YouTube spec)</option>
+            <option value="std">Smaller file</option>
+          </select>
+        </label>
+        <label>Audio fades at cuts
+          <select id="outFade">
+            <option value="0.008">On (no clicks)</option>
+            <option value="0">Off</option>
+          </select>
+        </label>
+      </div>
+      <p class="hint" id="exportSpec"></p>
+      <button class="btn primary big" id="exportBtn">Export video</button>
+      <div id="exporting" hidden>
+        <p id="exportLabel">Exporting…</p>
+        <div class="bar"><div id="exportBar"></div></div>
+        <button class="btn ghost small" id="cancelBtn">Cancel</button>
+      </div>
+      <div id="done" hidden>
+        <p id="doneLabel"></p>
+        <div class="row">
+          <button class="btn primary" id="shareBtn">Share / Save</button>
+          <a class="btn" id="dlLink" download>Download</a>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast" hidden></div>
+<script type="module" src="app.js"></script>
+</body>
+</html>
