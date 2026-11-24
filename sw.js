@@ -1,5 +1,5 @@
 // Offline cache for the app shell (videos are never cached or uploaded).
-const CACHE = 'silence-cutter-v1';
+const CACHE = 'silence-cutter-v2';
 const FILES = [
   './', 'index.html', 'style.css', 'app.js', 'export.js', 'manifest.webmanifest',
   'icon.svg', 'icon-192.png', 'icon-512.png',
