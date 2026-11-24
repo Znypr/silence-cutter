@@ -1,5 +1,7 @@
 # Silence Cutter
 
+**Open on your phone: https://znypr.github.io/silence-cutter/** then "Add to Home screen" (Chrome menu / Safari Share). Works offline after the first visit.
+
 Phone web app (PWA): pick a video, it finds the dead silences, you tweak and preview, then export an upload-ready MP4. Everything runs on the phone; the video is never uploaded anywhere.
 
 ## Use
@@ -13,6 +15,9 @@ Phone web app (PWA): pick a video, it finds the dead silences, you tweak and pre
 - [Mediabunny](https://mediabunny.dev) (MPL-2.0, vendored in `vendor/`) over WebCodecs: hardware decode/encode, streams the file instead of loading it, so 4K and long clips work. AAC wasm fallback for browsers without a native AAC encoder.
 - Needs a secure page (https or localhost) and Chrome (Android) / Safari 16.4+ (iPhone).
 - Files: `index.html`, `style.css`, `app.js` (detection, timeline, preview), `export.js` (encode), `sw.js` (offline), `manifest.webmanifest`, icons (`make_icons.py`).
+
+## Updating
+This folder is the git working copy of https://github.com/Znypr/silence-cutter (GitHub Pages serves `main`). Bump `CACHE` in `sw.js` when shipping so phones pick up the new version.
 
 ## Run on the PC
 `python apps/silence-cutter/serve.py` then open http://localhost:8811 (launch config `silence-cutter`).
